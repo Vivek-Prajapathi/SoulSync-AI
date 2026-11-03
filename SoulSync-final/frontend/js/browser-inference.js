@@ -40,7 +40,7 @@ function detectPerson(keypoints) {
     return visible.filter(Boolean).length >= 6 && shoulderVisible && hipVisible;
 }
 
-function extractFeatures(keypoints, metadata) {
+export function featuresFromKeypoints(keypoints, metadata) {
     if (metadata.feature_count !== 51 || metadata.feature_order.length !== 51) {
         throw new Error("The browser classifier metadata does not match the expected 51 features.");
     }
@@ -215,8 +215,6 @@ export class BrowserPoseAnalyzer {
     static async create() {
         await tf.setBackend("cpu");
         await tf.ready();
-        const wasmBase = cameraAssetUrl("wasm/");
-        tflite.setWasmPath(wasmBase);
         ort.env.wasm.wasmPaths = {
             mjs: cameraAssetUrl("wasm/ort-wasm-simd-threaded.mjs"),
             wasm: cameraAssetUrl("wasm/ort-wasm-simd-threaded.wasm")
@@ -265,6 +263,30 @@ export class BrowserPoseAnalyzer {
         if (!this.inputContext) {
             throw new Error("Could not create the browser inference canvas.");
         }
+    }
+
+    async classifyFeatures(features) {
+        if (features.length !== this.metadata.feature_count) {
+            throw new Error(
+                `Expected ${this.metadata.feature_count} classifier features, received ${features.length}.`
+            );
+        }
+        const classifierInput = new ort.Tensor("float32", features, [1, features.length]);
+        const outputs = await this.classifier.run({
+            [this.metadata.input_name]: classifierInput
+        });
+        const classIndex = Number(outputs[this.metadata.outputs.label].data[0]);
+        const probabilities = outputs[this.metadata.outputs.probabilities].data;
+        const classPosition = this.metadata.class_indices.indexOf(classIndex);
+        if (classPosition < 0 || probabilities.length !== this.metadata.class_labels.length) {
+            throw new Error("The browser classifier returned an unknown class or probability shape.");
+        }
+        return {
+            classIndex,
+            pose: this.metadata.class_labels[classPosition],
+            confidence: Number(probabilities[classPosition]),
+            probabilities: Array.from(probabilities)
+        };
     }
 
     async analyze(video, expectedPose) {
@@ -344,20 +366,16 @@ export class BrowserPoseAnalyzer {
             };
         }
 
-        const features = extractFeatures(keypoints, this.metadata);
-        const classifierInput = new ort.Tensor("float32", features, [1, features.length]);
-        const outputs = await this.classifier.run({
-            [this.metadata.input_name]: classifierInput
-        });
-        const classIndex = Number(outputs[this.metadata.outputs.label].data[0]);
-        const probabilities = outputs[this.metadata.outputs.probabilities].data;
-        const classPosition = this.metadata.class_indices.indexOf(classIndex);
-        if (classPosition < 0 || probabilities.length !== this.metadata.class_labels.length) {
-            throw new Error("The browser classifier returned an unknown class or probability shape.");
-        }
-
-        const pose = this.metadata.class_labels[classPosition];
-        const confidence = Number(probabilities[classPosition]);
+        const features = featuresFromKeypoints(keypoints, this.metadata);
+        const prediction = await this.classifyFeatures(features);
+        const pose = prediction.pose;
+        const topPredictions = prediction.probabilities
+            .map((confidence, index) => ({
+                pose: this.metadata.class_labels[index],
+                confidence: Number(confidence)
+            }))
+            .sort((first, second) => second.confidence - first.confidence)
+            .slice(0, 3);
         const feedback = generateFeedback(
             keypoints,
             sourceKeypoints,
@@ -368,8 +386,9 @@ export class BrowserPoseAnalyzer {
         );
         return {
             pose,
-            confidence,
+            confidence: prediction.confidence,
             confidence_type: "predict_proba",
+            top_predictions: topPredictions,
             person_detected: true,
             pose_detection_status: poseDetectionStatus,
             keypoint_confidence: keypointConfidence,

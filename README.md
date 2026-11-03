@@ -1,38 +1,36 @@
 # SoulSync AI
 
-This repository contains the SoulSync AI yoga pose detection and coaching project. The implementation lives under the [SoulSync-final](./SoulSync-final) folder.
+This repository contains the SoulSync AI yoga pose detection and coaching project. The implementation lives under the [SoulSync-final](./SoulSync-final) folder and runs live pose inference in the browser.
 
 ## Project Summary
 
-SoulSync AI detects yoga poses from camera frames using MoveNet keypoints and a trained XGBoost classifier. The application serves a browser-based practice flow with live analysis, posture coaching, and a FastAPI backend for inference.
+SoulSync AI detects yoga poses using the existing MoveNet TFLite model and trained XGBoost classifier. Camera frames stay in the browser; the FastAPI backend is optional.
 
 ## Quick Start
 
 ```bash
-cd SoulSync-final
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r backend/requirements.txt
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+cd SoulSync-final/frontend
+npm ci
+npm run dev
 ```
 
 Then open:
 
-- http://127.0.0.1:8000/
-- http://127.0.0.1:8000/session
+- http://localhost:5173/
+- http://localhost:5173/session.html
 
 ## Project Folder
 
-- [SoulSync-final/backend](./SoulSync-final/backend) — FastAPI backend and pose inference logic
-- [SoulSync-final/frontend](./SoulSync-final/frontend) — landing page and session UI
+- [SoulSync-final/backend](./SoulSync-final/backend) — optional FastAPI backend and pose inference logic
+- [SoulSync-final/frontend](./SoulSync-final/frontend) — Vite frontend, browser inference, and session UI
+- [SoulSync-final/frontend/models](./SoulSync-final/frontend/models) — parity-validated ONNX classifier and metadata
 - [SoulSync-final/live_coach_xgboost.py](./SoulSync-final/live_coach_xgboost.py) — MoveNet + XGBoost live coaching pipeline
 - [SoulSync-final/pose_cls_xgboost.joblib](./SoulSync-final/pose_cls_xgboost.joblib) — trained XGBoost model bundle
 - [SoulSync-final/movenet_thunder.tflite](./SoulSync-final/movenet_thunder.tflite) — MoveNet TFLite model
 
 ## Deployment
 
-The app is designed to run as a Python web service on a CPU-friendly deployment target. For local testing, use the backend instructions above.
+Deploy the static app to Vercel with `SoulSync-final` as the project root. Its `vercel.json` builds and publishes the frontend and browser model assets; no separately hosted API is needed.
 
 - Local demo: http://127.0.0.1:8000
 - Production URL: replace this with your live deployment URL

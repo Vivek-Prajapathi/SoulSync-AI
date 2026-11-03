@@ -24,6 +24,10 @@ function copyDirectoryContents(sourceDirectory, destinationDirectory) {
 
 function getRuntimeAssetSources() {
     const sources = new Map();
+    sources.set(
+        "models/movenet_thunder.tflite",
+        resolve(projectDirectory, "movenet_thunder.tflite")
+    );
     const tfliteWasmDirectory = resolve(
         frontendDirectory,
         "node_modules/@tensorflow/tfjs-tflite/wasm"
@@ -85,7 +89,7 @@ function browserRuntimeAssets() {
                 frontendDirectory,
                 "node_modules/@tensorflow/tfjs-tflite/wasm"
             );
-            copyDirectoryContents(tfliteWasmDirectory, wasmDirectory);
+            copyDirectoryContents(tfliteWasmDirectory, outputDirectory);
 
             const onnxRuntimeDirectory = resolve(
                 frontendDirectory,

@@ -621,6 +621,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--moss); outline-
 .live-metric strong { color: #263c2d; font: 700 14px/1.3 "Manrope", "DM Sans", sans-serif; overflow-wrap: anywhere; }
 .live-metric-status { grid-column: 1 / -1; }
 .live-metric-status strong { color: #315d3d; }
+.pose-alternatives { margin: 10px 0 0; color: #718076; font-size: 11px; line-height: 1.45; }
 .coach-message { margin: 16px 0 0; padding-top: 13px; border-top: 1px solid #edf0eb; color: #526358; font-size: 13px; line-height: 1.55; }
 
 .pose-picker { margin-top: 16px; padding: 18px; }

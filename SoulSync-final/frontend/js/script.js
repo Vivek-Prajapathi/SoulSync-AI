@@ -47,6 +47,7 @@ const holdTime = document.getElementById("holdTime");
 const predictionConfidence = document.getElementById("predictionConfidence");
 const keypointConfidence = document.getElementById("keypointConfidence");
 const poseDetectionStatus = document.getElementById("poseDetectionStatus");
+const poseAlternatives = document.getElementById("poseAlternatives");
 
 let currentPose = null;
 let cameraStream = null;
@@ -71,9 +72,10 @@ function selectPose(poseId) {
         card.setAttribute("aria-pressed", String(isSelected));
     });
 
-    detectedPose.textContent = cameraStream ? "Waiting for analysis…" : pose.name;
+    detectedPose.textContent = cameraStream ? "Waiting for analysis…" : "Camera off";
     selectedPose.textContent = pose.sanskrit;
     predictionConfidence.textContent = "--";
+    poseAlternatives.textContent = "";
     coachMessage.textContent = cameraStream
         ? `Your ${pose.name} practice is selected. Move gently and listen to your body.`
         : `A lovely choice. Turn on your camera when you're ready to practice ${pose.name}.`;
@@ -263,6 +265,7 @@ function setNoDetectionState() {
     drawSkeleton([]);
     detectedPose.textContent = "No pose detected";
     predictionConfidence.textContent = "--";
+    poseAlternatives.textContent = "";
     poseDetectionStatus.textContent = "Not detected";
     cameraMessage.textContent = "Please move into the camera frame so your body can be detected clearly.";
     coachMessage.textContent = cameraMessage.textContent;
@@ -318,6 +321,11 @@ async function analyzeCurrentFrame() {
         predictionConfidence.textContent = Number.isFinite(classifierConfidence)
             ? `${(classifierConfidence * 100).toFixed(1)}%`
             : "Unavailable";
+        poseAlternatives.textContent = Array.isArray(result.top_predictions)
+            ? `Top model outputs: ${result.top_predictions
+                .map(({ pose, confidence }) => `${poseName(pose)} ${(confidence * 100).toFixed(1)}%`)
+                .join(" · ")}`
+            : "";
 
         const target = poses[currentPose]?.name;
         const matchesTarget = currentPose && canonicalPose(result.pose) === canonicalPose(currentPose);
@@ -336,6 +344,7 @@ async function analyzeCurrentFrame() {
             cameraMessage.textContent = `On-device pose analysis unavailable: ${error.message}`;
             poseDetectionStatus.textContent = "AI unavailable";
             predictionConfidence.textContent = "--";
+            poseAlternatives.textContent = "";
             coachMessage.textContent = "Check your connection while the browser downloads the models, then try again.";
         }
     } finally {
@@ -390,6 +399,7 @@ async function startCamera() {
         sessionTimer = window.setInterval(formatElapsedTime, 1000);
         detectedPose.textContent = "Loading on-device AI…";
         poseDetectionStatus.textContent = "Loading models";
+        poseAlternatives.textContent = "";
         cameraMessage.textContent = "Live camera is on. Loading MoveNet and the trained pose classifier in your browser.";
         coachMessage.textContent = "Your camera frames stay on this device while the models load.";
         loadBrowserAnalyzer()
@@ -397,6 +407,7 @@ async function startCamera() {
                 if (!cameraStream) {
                     return;
                 }
+                detectedPose.textContent = "Looking for body…";
                 poseDetectionStatus.textContent = "Looking for body";
                 cameraMessage.classList.remove("is-error");
                 cameraMessage.textContent = "On-device AI is ready. Move into view for pose detection.";
@@ -446,8 +457,9 @@ function stopCamera() {
     stopBtn.disabled = true;
     holdTime.textContent = "0:00";
     setCameraStatus(false);
-    detectedPose.textContent = currentPose ? poses[currentPose].name : "Choose a pose";
+    detectedPose.textContent = currentPose ? "Camera off" : "Choose a pose";
     predictionConfidence.textContent = "--";
+    poseAlternatives.textContent = "";
     keypointConfidence.textContent = "--";
     poseDetectionStatus.textContent = "Camera off";
     cameraMessage.textContent = "Camera is off. Take a moment, then start again whenever you're ready.";

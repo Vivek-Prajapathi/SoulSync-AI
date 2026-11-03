@@ -1,6 +1,6 @@
 # SoulSync AI
 
-SoulSync AI is a yoga posture detection and coaching system that uses MoveNet for keypoint extraction and a trained XGBoost classifier for pose recognition. It combines computer vision, motion analysis, and a lightweight web frontend so users can choose a pose, frame themselves on camera, and receive posture feedback in near real time.
+SoulSync AI is a yoga posture detection and coaching system that runs MoveNet keypoint extraction and the trained XGBoost classifier directly in the browser. Users can choose a pose, frame themselves on camera, and receive live posture feedback without sending camera frames to an analysis server.
 
 ## Live Demo
 
@@ -10,13 +10,13 @@ SoulSync AI is a yoga posture detection and coaching system that uses MoveNet fo
 ## Features
 
 - Webcam-based live practice flow
-- MoveNet TFLite inference for 17 body keypoints
-- XGBoost pose classification using the trained model bundle
+- Browser-side MoveNet TFLite inference for 17 body keypoints
+- Browser-side ONNX export of the original XGBoost pipeline
 - Confidence-coloured keypoint and skeleton overlay on the mirrored live preview
 - Top-3 prediction output with confidence scores
 - Live keypoint visibility and pose-detection status
 - Coaching feedback tuned to posture quality and target alignment
-- FastAPI backend with health checks and structured JSON responses
+- Optional FastAPI backend retained for API-based integration and testing
 - Browser-based session selection and camera preview
 
 ## Project Structure
@@ -34,8 +34,18 @@ SoulSync-final/
 ├── frontend/
 │   ├── css/
 │   ├── js/
+│   ├── models/
+│   │   ├── pose_cls_xgboost.json
+│   │   └── pose_cls_xgboost.onnx
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── vite.config.js
 │   ├── index.html
 │   └── session.html
+├── scripts/
+│   └── export_browser_classifier.py
+├── browser-conversion-requirements.txt
+├── vercel.json
 ├── live_coach_xgboost.py
 ├── movenet.py
 ├── classify_with_xgboost.py
@@ -63,10 +73,11 @@ SoulSync-final/
 
 The project uses the trained XGBoost bundle saved as `pose_cls_xgboost.joblib` and the MoveNet TFLite weights in `movenet_thunder.tflite`.
 
-Important compatibility note:
-- The serialized model was created with older scikit-learn and XGBoost versions.
-- The project is configured to keep the original model and use a matching runtime environment where possible.
-- The current environment uses Python 3.11 and retains the compatible package versions already present in the project virtual environment.
+`movenet_thunder.tflite` runs in the browser through the TensorFlow.js TFLite WebAssembly runtime. `pose_cls_xgboost.joblib` remains the source model; `scripts/export_browser_classifier.py` exports its complete `StandardScaler` + `XGBClassifier` pipeline to ONNX. The browser artifact retains the saved 51-feature order, `use_scores=True`, and original class-label mapping.
+
+The export script compares ONNX predictions with the Python pipeline on every row in `test_data_new.csv` before writing the browser artifact. The current export has 0 class mismatches across 1,011 rows; its maximum probability absolute difference is 3.43e-7 (the allowed tolerance is 1e-5). The original `.joblib` and `.tflite` models are not modified.
+
+The existing model may emit scikit-learn/XGBoost version warnings when loaded by the current Python environment. The browser export validation uses the installed Python model as its reference and does not retrain it.
 
 ## Supported Pose Labels
 
@@ -117,82 +128,61 @@ When a person is detected, `confidence` and each top prediction score come from 
 
 This endpoint accepts a list of analysis payloads for bulk usage.
 
-## Local Setup
+## Run the Browser App Locally
 
-### 1) Open the project folder
+The frontend performs live inference locally and does not require the FastAPI server.
+
+```bash
+cd SoulSync-final/frontend
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173/` and start a session. Camera access requires `localhost` or HTTPS. The first run downloads the 12.6 MB MoveNet model and WebAssembly runtime assets; later visits can use the browser cache.
+
+To validate the production build locally:
+
+```bash
+cd SoulSync-final/frontend
+npm run build
+npm run preview
+```
+
+## Regenerate and Validate the ONNX Classifier
+
+The ONNX classifier artifact is generated from the existing Python model. To regenerate it, first install the backend's Python requirements, then install the conversion-only tools and run the exporter:
 
 ```bash
 cd SoulSync-final
-```
-
-### 2) Create and activate a virtual environment
-
-```bash
 python3 -m venv venv
 source venv/bin/activate
-```
-
-### 3) Install dependencies
-
-```bash
-pip install --upgrade pip
 pip install -r backend/requirements.txt
+pip install -r browser-conversion-requirements.txt
+python scripts/export_browser_classifier.py
 ```
 
-### 4) Run the backend
+The exporter stops without replacing the existing browser artifact if any class differs from Python or if a probability differs by more than `1e-5`.
 
-```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-```
+## Vercel Deployment
 
-### 5) Open the app
-
-```text
-http://127.0.0.1:8000/
-```
-
-## Frontend Usage
-
-The frontend pages are served by FastAPI and can be accessed through the backend.
-
-- Home page: `/`
-- Session page: `/session`
-
-The user selects a pose and turns on the camera. The browser sends reduced JPEG frames to the backend at up to about one frame per second. A confidence-coloured skeleton is drawn over the mirrored camera preview and the dashboard displays the detected pose, model score, keypoint confidence, status, practice time, and coaching cues. The app processes uploaded frames in memory and does not save image frames.
+Set the Vercel project root directory to `SoulSync-final`. The checked-in `vercel.json` runs `npm --prefix frontend ci`, builds the Vite site, and publishes `frontend/dist`. The build includes the original MoveNet TFLite asset, the validated ONNX classifier, and the required WebAssembly files. No FastAPI host or `/api/analyze` route is required by the deployed frontend.
 
 ## Deployment Notes
 
-This project is suitable for CPU-based deployment with a lightweight backend workload.
+Vercel serves only static assets for this setup. Browser inference uses WebAssembly on the visitor's device; actual frame rate depends on the device and browser. The TensorFlow.js TFLite package is alpha software, and model inference should be checked in the target browsers after deployment.
 
-Recommended deployment principles:
-
-- keep the model files in the app bundle or mounted volume
-- use a single FastAPI worker process with model initialization at startup
-- enforce reasonable maximum image size limits
-- avoid loading or reloading the model on every request
-- run behind a reverse proxy with HTTPS enabled
-- when the frontend and API are deployed separately, set `SOULSYNC_ALLOWED_ORIGINS` on the backend to the exact frontend origin
-- set the `soulsync-api-base` meta tag in `frontend/session.html` to the HTTPS URL of the deployed FastAPI service
-
-The Vercel frontend is static and does not provide FastAPI routes. If the backend URL is not configured, the session page will keep the camera preview available and show a setup message instead of repeatedly requesting a missing `/api/analyze` route. Live MoveNet/XGBoost predictions require the FastAPI backend to be deployed and reachable.
-
-For separate frontend/backend deployments:
-
-1. Deploy the FastAPI app with `backend/requirements.txt`, `pose_cls_xgboost.joblib`, and `movenet_thunder.tflite`.
-2. Set `SOULSYNC_ALLOWED_ORIGINS` on the backend to the exact HTTPS frontend origin, for example `https://your-site.vercel.app`.
-3. Set the `content` of `<meta name="soulsync-api-base">` in `frontend/session.html` to the FastAPI service origin, for example `https://your-api-host.example`.
-4. Redeploy the frontend. The browser then posts frames to `<backend-origin>/api/analyze`.
+The optional FastAPI routes remain available for other clients and direct API testing, but the session page does not call them.
 
 ## Troubleshooting
 
-### FastAPI fails to start
+### Optional FastAPI service
 
-Check that:
+The backend remains available for clients that explicitly use its API. Install its Python requirements and start it with:
 
-- the virtual environment is active
-- dependencies were installed successfully
-- `movenet_thunder.tflite` exists in the project root
-- `pose_cls_xgboost.joblib` exists in the project root
+```bash
+cd SoulSync-final
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
 
 ### Model compatibility warnings
 
@@ -208,7 +198,7 @@ Use:
 
 ## Development Notes
 
-The app reuses the original feature construction and inference pipeline implemented in `live_coach_xgboost.py` as much as possible so the trained model input remains consistent.
+The browser feature vector is built in the original 51-feature order recorded in the model bundle metadata. The ONNX graph includes the original scaler and classifier; JavaScript does not rescale or reorder those features.
 
 ## License
 

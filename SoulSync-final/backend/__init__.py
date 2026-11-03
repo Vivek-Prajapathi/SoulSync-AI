@@ -1,0 +1,1 @@
+"""SoulSync AI backend package."""

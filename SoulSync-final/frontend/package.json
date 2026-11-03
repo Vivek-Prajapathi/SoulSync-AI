@@ -1,0 +1,19 @@
+{
+  "name": "soulsync-browser-inference",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-backend-cpu": "4.9.0",
+    "@tensorflow/tfjs-core": "4.9.0",
+    "@tensorflow/tfjs-tflite": "0.0.1-alpha.10",
+    "onnxruntime-web": "1.31.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}

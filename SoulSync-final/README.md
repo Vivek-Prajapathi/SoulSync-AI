@@ -12,7 +12,9 @@ SoulSync AI is a yoga posture detection and coaching system that uses MoveNet fo
 - Webcam-based live practice flow
 - MoveNet TFLite inference for 17 body keypoints
 - XGBoost pose classification using the trained model bundle
+- Confidence-coloured keypoint and skeleton overlay on the mirrored live preview
 - Top-3 prediction output with confidence scores
+- Live keypoint visibility and pose-detection status
 - Coaching feedback tuned to posture quality and target alignment
 - FastAPI backend with health checks and structured JSON responses
 - Browser-based session selection and camera preview
@@ -105,27 +107,9 @@ Request body example:
 }
 ```
 
-Response example:
+Response fields include `pose`, `display_name`, `confidence`, `confidence_type`, `confidence_calibrated`, `person_detected`, `pose_detection_status`, `keypoint_confidence`, `visible_keypoints`, `top_predictions`, `keypoints`, `feedback`, and `processing_time_ms`.
 
-```json
-{
-  "success": true,
-  "pose": "cobra",
-  "display_name": "Bhujangasana",
-  "confidence": 0.92,
-  "is_correct_pose": true,
-  "top_predictions": [
-    {
-      "label": "cobra",
-      "display_name": "Bhujangasana",
-      "confidence": 0.92
-    }
-  ],
-  "keypoints": [],
-  "feedback": ["Keep your chest lifted and gaze forward."],
-  "processing_time_ms": 120
-}
-```
+When a person is detected, `confidence` and each top prediction score come from the trained model's `predict_proba` output. These are prediction scores, not measured model accuracy, and are not calibrated probabilities. `keypoints` always contains all 17 MoveNet landmarks with source-frame normalized coordinates and MoveNet confidence scores. Frames without a detected person do not receive a classifier prediction.
 
 ### Batch analysis
 
@@ -174,7 +158,7 @@ The frontend pages are served by FastAPI and can be accessed through the backend
 - Home page: `/`
 - Session page: `/session`
 
-The user selects a pose, turns on the camera, and the browser sends sampled frames to the backend for inference.
+The user selects a pose and turns on the camera. The browser sends reduced JPEG frames to the backend at up to about one frame per second. A confidence-coloured skeleton is drawn over the mirrored camera preview and the dashboard displays the detected pose, model score, keypoint confidence, status, practice time, and coaching cues. The app processes uploaded frames in memory and does not save image frames.
 
 ## Deployment Notes
 
@@ -187,6 +171,17 @@ Recommended deployment principles:
 - enforce reasonable maximum image size limits
 - avoid loading or reloading the model on every request
 - run behind a reverse proxy with HTTPS enabled
+- when the frontend and API are deployed separately, set `SOULSYNC_ALLOWED_ORIGINS` on the backend to the exact frontend origin
+- set the `soulsync-api-base` meta tag in `frontend/session.html` to the HTTPS URL of the deployed FastAPI service
+
+The Vercel frontend is static and does not provide FastAPI routes. If the backend URL is not configured, the session page will keep the camera preview available and show a setup message instead of repeatedly requesting a missing `/api/analyze` route. Live MoveNet/XGBoost predictions require the FastAPI backend to be deployed and reachable.
+
+For separate frontend/backend deployments:
+
+1. Deploy the FastAPI app with `backend/requirements.txt`, `pose_cls_xgboost.joblib`, and `movenet_thunder.tflite`.
+2. Set `SOULSYNC_ALLOWED_ORIGINS` on the backend to the exact HTTPS frontend origin, for example `https://your-site.vercel.app`.
+3. Set the `content` of `<meta name="soulsync-api-base">` in `frontend/session.html` to the FastAPI service origin, for example `https://your-api-host.example`.
+4. Redeploy the frontend. The browser then posts frames to `<backend-origin>/api/analyze`.
 
 ## Troubleshooting
 

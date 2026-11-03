@@ -54,7 +54,14 @@ let analysisFrame = null;
 let analysisInFlight = false;
 let lastAnalysisTime = 0;
 let analysisController = null;
-const apiBaseUrl = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
+const configuredApiBaseUrl = window.SOULSYNC_API_BASE_URL
+    || document.querySelector('meta[name="soulsync-api-base"]')?.content.trim();
+const isVercelStaticDeployment = window.location.hostname.endsWith(".vercel.app");
+const apiBaseUrl = configuredApiBaseUrl
+    ? configuredApiBaseUrl.replace(/\/+$/, "")
+    : isVercelStaticDeployment
+        ? ""
+        : (window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin);
 
 function selectPose(poseId) {
     const pose = poses[poseId];
@@ -268,6 +275,14 @@ async function analyzeCurrentFrame() {
         return;
     }
 
+    if (!apiBaseUrl) {
+        cameraMessage.classList.add("is-error");
+        cameraMessage.textContent = "Pose analysis is not configured for this deployment. Set the hosted FastAPI URL in the session page API setting.";
+        poseDetectionStatus.textContent = "Backend URL required";
+        coachMessage.textContent = "The webcam preview works, but MoveNet and XGBoost need the hosted inference backend.";
+        return;
+    }
+
     analysisInFlight = true;
     const frameCanvas = document.createElement("canvas");
     const frameContext = frameCanvas.getContext("2d");
@@ -312,6 +327,7 @@ async function analyzeCurrentFrame() {
             ? `${(pointConfidence * 100).toFixed(1)}% · ${result.visible_keypoints}/17 visible`
             : "--";
         poseDetectionStatus.textContent = result.pose_detection_status || "Unknown";
+        cameraMessage.classList.remove("is-error");
 
         if (!result.person_detected) {
             setNoDetectionState();
@@ -327,7 +343,6 @@ async function analyzeCurrentFrame() {
 
         const target = poses[currentPose]?.name || "your selected pose";
         const matchesTarget = canonicalPose(result.pose) === canonicalPose(currentPose);
-        cameraMessage.classList.remove("is-error");
         cameraMessage.textContent = matchesTarget
             ? `${predictedName} detected · target pose matched`
             : `${predictedName} detected · selected target: ${target}`;
@@ -365,7 +380,7 @@ function startAnalysisLoop() {
     if (analysisFrame !== null) {
         window.cancelAnimationFrame(analysisFrame);
     }
-    lastAnalysisTime = 0;
+    lastAnalysisTime = performance.now() - 900;
     analysisFrame = window.requestAnimationFrame(analysisLoop);
 }
 
@@ -408,6 +423,9 @@ async function startCamera() {
             cameraStream.getTracks().forEach((track) => track.stop());
             cameraStream = null;
         }
+        camera.srcObject = null;
+        camera.style.display = "none";
+        cameraPlaceholder.style.display = "flex";
         showCameraError(error);
     } finally {
         startBtn.disabled = false;

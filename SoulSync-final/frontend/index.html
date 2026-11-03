@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#EEF0E6">
-    <meta name="description" content="SoulSync AI gives thoughtful yoga posture feedback with a pose model that runs in your browser.">
+    <meta name="description" content="SoulSync AI uses MoveNet and a trained pose classifier to provide live yoga posture feedback.">
     <title>SoulSync AI — Hold the pose</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,17 +31,17 @@
     <main>
         <section class="hero page-wrap">
             <div class="hero-copy">
-                <p class="eyebrow"><span class="eyebrow-mark"></span> Posture feedback that runs in your browser</p>
+                <p class="eyebrow"><span class="eyebrow-mark"></span> Live posture feedback, powered by AI</p>
                 <h1 aria-label="Hold the pose. We'll watch your alignment.">Hold the pose.<br>We'll watch<br>your <span class="alignment-word">alignment<svg viewBox="0 0 270 18" preserveAspectRatio="none" aria-hidden="true"><path d="M3 11c22-9 31 7 53 0S88 5 108 10s34 8 55-1 35-5 50 0 35 6 54-3" /></svg></span>.</h1>
-                <p class="hero-description">SoulSync AI follows 33 points on your body through the webcam and tells you, in plain words, what to adjust: knee over ankle, hips level, spine long.</p>
+                <p class="hero-description">SoulSync AI tracks 17 body keypoints from your webcam and offers clear posture cues, confidence scores, and alignment guidance.</p>
                 <div class="hero-actions">
                     <a class="button button-gold" href="session.html">Try Warrior II <span aria-hidden="true">→</span></a>
                     <a class="button button-outline" href="#how-it-works">See how it works</a>
                 </div>
                 <ul class="trust-list" aria-label="At a glance">
-                    <li><span class="trust-check" aria-hidden="true">✓</span>No video leaves your device</li>
+                    <li><span class="trust-check" aria-hidden="true">✓</span>Frames processed for live feedback</li>
                     <li><span class="trust-check" aria-hidden="true">✓</span>Laptop or phone camera</li>
-                    <li><span class="trust-check" aria-hidden="true">✓</span>5 poses to start</li>
+                    <li><span class="trust-check" aria-hidden="true">✓</span>7 poses to practice</li>
                 </ul>
             </div>
 
@@ -169,17 +169,17 @@
         <section class="privacy-section" id="privacy">
             <div class="privacy-inner page-wrap">
                 <div class="privacy-copy">
-                    <p class="eyebrow">Privacy</p>
-                    <h2>Your camera<br>stays yours</h2>
-                    <p>The pose model runs inside your browser. Frames are never uploaded, recorded or saved. Only the joint angles for the current moment are used for a cue, then dropped.</p>
+                    <p class="eyebrow">Camera &amp; privacy</p>
+                    <h2>Your camera,<br>your practice</h2>
+                    <p>For live coaching, your browser sends reduced camera frames to the configured SoulSync backend about once per second. The backend processes frames in memory and returns pose keypoints, prediction scores, and feedback; the application does not save the image frames. Hosting providers may have separate infrastructure logging policies.</p>
                 </div>
-                <div class="privacy-flow" aria-label="Your camera goes to the pose model in this tab, then a cue appears on screen. Nothing is sent to our servers.">
+                <div class="privacy-flow" aria-label="The browser sends sampled camera frames to the SoulSync backend, which returns pose analysis and feedback.">
                     <div class="flow-row">
                         <div class="flow-box">Your camera</div><span class="flow-arrow" aria-hidden="true">→</span>
-                        <div class="flow-box flow-highlight">Pose model<br>in this tab</div><span class="flow-arrow" aria-hidden="true">→</span>
+                        <div class="flow-box flow-highlight">SoulSync<br>pose backend</div><span class="flow-arrow" aria-hidden="true">→</span>
                         <div class="flow-box">Cue on<br>screen</div>
                     </div>
-                    <div class="server-note">Our servers: nothing sent, nothing stored</div>
+                    <div class="server-note">Frame images are processed in memory, not stored by the application</div>
                 </div>
             </div>
         </section>

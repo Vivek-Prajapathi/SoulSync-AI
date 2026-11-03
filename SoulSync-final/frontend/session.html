@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#EEF0E6">
-    <meta name="description" content="Choose a yoga pose and start a private camera preview with SoulSync AI.">
+    <meta name="description" content="Choose a yoga pose and get live camera-based feedback from SoulSync AI.">
+    <meta name="soulsync-api-base" content="">
     <title>Live coach · SoulSync AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,7 +39,7 @@
                             <span class="camera-panel-kicker">LIVE PREVIEW</span>
                             <span id="cameraStatus" class="camera-status"><span class="camera-status-dot" aria-hidden="true"></span> CAMERA OFF</span>
                         </div>
-                        <span class="camera-panel-private">Private on this device</span>
+                        <span class="camera-panel-private">Frames sent for analysis</span>
                     </div>
                     <div class="camera-view">
                         <video id="camera" autoplay playsinline muted aria-label="Live camera preview"></video>
@@ -69,7 +70,7 @@
                     <p class="pose-sanskrit" id="selectedPose">Select one below to get started.</p>
                     <div class="live-metrics" aria-label="Live pose metrics">
                         <div class="live-metric">
-                            <span>Prediction confidence</span>
+                            <span title="XGBoost predict_proba output, not measured model accuracy">Prediction confidence · not accuracy</span>
                             <strong id="predictionConfidence">--</strong>
                         </div>
                         <div class="live-metric">

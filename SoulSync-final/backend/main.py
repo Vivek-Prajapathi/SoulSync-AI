@@ -10,15 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import FRONTEND_DIR, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MODEL_PATH, TFLITE_PATH
+from .config import ALLOWED_ORIGINS, FRONTEND_DIR, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MODEL_PATH, TFLITE_PATH
 from .inference import PoseAnalyzer, decode_base64_image, prepare_frame_for_inference
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="SoulSync AI", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

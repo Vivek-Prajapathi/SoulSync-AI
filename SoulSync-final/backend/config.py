@@ -21,3 +21,11 @@ MODEL_PATH = resolve_path("SOULSYNC_MODEL_PATH", BASE_DIR / "pose_cls_xgboost.jo
 TFLITE_PATH = resolve_path("SOULSYNC_TFLITE_PATH", BASE_DIR / "movenet_thunder.tflite")
 MAX_IMAGE_PIXELS = int(os.getenv("SOULSYNC_MAX_IMAGE_PIXELS", "1280000"))
 MAX_IMAGE_BYTES = int(os.getenv("SOULSYNC_MAX_IMAGE_BYTES", "4194304"))
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "SOULSYNC_ALLOWED_ORIGINS",
+        "http://localhost:8000,http://127.0.0.1:8000",
+    ).split(",")
+    if origin.strip()
+]

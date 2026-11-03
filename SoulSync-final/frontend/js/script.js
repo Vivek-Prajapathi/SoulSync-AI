@@ -46,6 +46,9 @@ let currentPose = null;
 let cameraStream = null;
 let sessionStartedAt = 0;
 let sessionTimer = null;
+let analysisTimer = null;
+let analysisInFlight = false;
+const apiBaseUrl = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
 function selectPose(poseId) {
     const pose = poses[poseId];
@@ -139,6 +142,76 @@ function showCameraError(error) {
     }
 }
 
+async function analyzeCurrentFrame() {
+    if (!cameraStream || !camera.videoWidth || !camera.videoHeight || analysisInFlight) {
+        return;
+    }
+
+    analysisInFlight = true;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    canvas.width = camera.videoWidth;
+    canvas.height = camera.videoHeight;
+    context.drawImage(camera, 0, 0, canvas.width, canvas.height);
+    const imageData = canvas.toDataURL("image/jpeg", 0.75);
+
+    try {
+        const response = await fetch(`${apiBaseUrl}/api/analyze`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                image: imageData,
+                expected_pose: currentPose,
+                pose: currentPose
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Analysis request failed with status ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (!result.success || !result.display_name) {
+            return;
+        }
+
+        const confidenceDisplay = Math.round((result.confidence || 0) * 100);
+        const poseDisplayName = result.display_name;
+        const topPrediction = result.top_predictions?.[0] || null;
+
+        cameraMessage.textContent = `${poseDisplayName} detected · ${confidenceDisplay}% confidence`;
+        coachMessage.textContent = result.feedback?.[0]
+            ? result.feedback[0]
+            : `Keep your focus on ${poseDisplayName} and move gently.`;
+
+        if (topPrediction && topPrediction.label !== currentPose) {
+            cameraMessage.textContent += ` · closest match: ${topPrediction.display_name}`;
+        }
+
+        if (result.is_correct_pose) {
+            coachMessage.textContent = result.feedback?.[0]
+                ? result.feedback[0]
+                : `Strong alignment in ${poseDisplayName}. Keep breathing and hold the shape.`;
+        }
+    } catch (error) {
+        cameraMessage.textContent = "Live analysis is temporarily unavailable. Retrying in a moment.";
+    } finally {
+        analysisInFlight = false;
+    }
+}
+
+function startAnalysisLoop() {
+    if (analysisTimer) {
+        window.clearInterval(analysisTimer);
+    }
+
+    analysisTimer = window.setInterval(() => {
+        analyzeCurrentFrame();
+    }, 1400);
+}
+
 async function startCamera() {
     cameraMessage.textContent = "";
     cameraMessage.classList.remove("is-error");
@@ -168,7 +241,8 @@ async function startCamera() {
         sessionStartedAt = Date.now();
         formatElapsedTime();
         sessionTimer = window.setInterval(formatElapsedTime, 1000);
-        cameraMessage.textContent = "Camera preview is on. Pose analysis is not connected to the browser yet.";
+        startAnalysisLoop();
+        cameraMessage.textContent = "Camera preview is on. Live pose analysis is now connected.";
         coachMessage.textContent = `Your ${poses[currentPose].name} practice is ready. Settle into a comfortable position and move with care.`;
     } catch (error) {
         showCameraError(error);
@@ -186,6 +260,10 @@ function stopCamera() {
     if (sessionTimer) {
         window.clearInterval(sessionTimer);
         sessionTimer = null;
+    }
+    if (analysisTimer) {
+        window.clearInterval(analysisTimer);
+        analysisTimer = null;
     }
     camera.srcObject = null;
     camera.style.display = "none";

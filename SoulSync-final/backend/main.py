@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+import logging
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MODEL_PATH, TFLITE_PATH
 from .inference import PoseAnalyzer, decode_base64_image, prepare_frame_for_inference
 
+logger = logging.getLogger(__name__)
 app = FastAPI(title="SoulSync AI", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -24,6 +27,18 @@ app.state.analyzer = PoseAnalyzer(str(MODEL_PATH), str(TFLITE_PATH))
 
 app.mount("/css", StaticFiles(directory=str(FRONTEND_DIR / "css")), name="css")
 app.mount("/js", StaticFiles(directory=str(FRONTEND_DIR / "js")), name="js")
+
+
+class AnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image: str = Field(min_length=1, max_length=MAX_IMAGE_BYTES * 4 // 3 + 256)
+    expected_pose: Optional[str] = Field(default=None, max_length=50)
+    pose: Optional[str] = Field(default=None, max_length=50)
+
+
+class BatchAnalyzeRequest(BaseModel):
+    images: List[AnalyzeRequest]
 
 
 @app.get("/")
@@ -58,41 +73,36 @@ def health_check() -> Dict[str, Any]:
     }
 
 
-async def _analyze_single_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    image_payload = payload.get("image")
-    expected_pose = payload.get("expected_pose") or payload.get("pose")
-
-    if not isinstance(image_payload, str) or not image_payload.strip():
+async def _analyze_single_payload(payload: AnalyzeRequest) -> Dict[str, Any]:
+    image_payload = payload.image
+    expected_pose = payload.expected_pose or payload.pose
+    if not image_payload.strip():
         raise HTTPException(status_code=400, detail="A base64-encoded image is required.")
 
-    image = decode_base64_image(image_payload)
-    if image.nbytes > MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail="Image is too large to process.")
-
-    image = prepare_frame_for_inference(image, max_pixels=MAX_IMAGE_PIXELS)
-    return await asyncio.to_thread(app.state.analyzer.analyze, image, expected_pose)
+    try:
+        image = decode_base64_image(image_payload)
+        if image.nbytes > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="Decoded image is too large to process.")
+        image = prepare_frame_for_inference(image, max_pixels=MAX_IMAGE_PIXELS)
+        return await asyncio.to_thread(app.state.analyzer.analyze, image, expected_pose)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Pose analysis failed")
+        raise HTTPException(status_code=500, detail="Pose analysis failed. Check backend logs for details.") from exc
 
 
 @app.post("/api/analyze")
-async def analyze_image(payload: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        return await _analyze_single_payload(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # pragma: no cover - server-side guard
-        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+async def analyze_image(payload: AnalyzeRequest) -> Dict[str, Any]:
+    return await _analyze_single_payload(payload)
 
 
 @app.post("/api/analyze/batch")
-async def analyze_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
-    images = payload.get("images")
-    if not isinstance(images, list):
-        raise HTTPException(status_code=400, detail="A list of images is required under the 'images' field.")
-
+async def analyze_batch(payload: BatchAnalyzeRequest) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
-    for item in images:
-        if not isinstance(item, dict):
-            raise HTTPException(status_code=400, detail="Each item in 'images' must be an object containing an image.")
+    for item in payload.images:
         results.append(await _analyze_single_payload(item))
 
     return {"success": True, "results": results}

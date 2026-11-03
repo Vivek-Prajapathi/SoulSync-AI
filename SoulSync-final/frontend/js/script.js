@@ -30,24 +30,30 @@ const poses = {
 };
 
 const poseGrid = document.getElementById("poseGrid");
-const targetPose = document.getElementById("targetPose");
+const detectedPose = document.getElementById("detectedPose");
 const selectedPose = document.getElementById("selectedPose");
 const coachMessage = document.getElementById("coachMessage");
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const camera = document.getElementById("camera");
+const skeletonOverlay = document.getElementById("skeletonOverlay");
 const cameraPlaceholder = document.getElementById("cameraPlaceholder");
 const cameraStatus = document.getElementById("cameraStatus");
 const cameraOverlay = document.querySelector(".camera-overlay-label");
 const cameraMessage = document.getElementById("cameraMessage");
 const holdTime = document.getElementById("holdTime");
+const predictionConfidence = document.getElementById("predictionConfidence");
+const keypointConfidence = document.getElementById("keypointConfidence");
+const poseDetectionStatus = document.getElementById("poseDetectionStatus");
 
 let currentPose = null;
 let cameraStream = null;
 let sessionStartedAt = 0;
 let sessionTimer = null;
-let analysisTimer = null;
+let analysisFrame = null;
 let analysisInFlight = false;
+let lastAnalysisTime = 0;
+let analysisController = null;
 const apiBaseUrl = window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin;
 
 function selectPose(poseId) {
@@ -63,11 +69,16 @@ function selectPose(poseId) {
         card.setAttribute("aria-pressed", String(isSelected));
     });
 
-    targetPose.textContent = pose.name;
+    detectedPose.textContent = cameraStream ? "Waiting for analysis…" : pose.name;
     selectedPose.textContent = pose.sanskrit;
+    predictionConfidence.textContent = "--";
     coachMessage.textContent = cameraStream
         ? `Your ${pose.name} practice is selected. Move gently and listen to your body.`
         : `A lovely choice. Turn on your camera when you're ready to practice ${pose.name}.`;
+
+    if (cameraStream) {
+        analyzeCurrentFrame();
+    }
 }
 
 function createPoseCard(poseId, pose, index, selectedId, onSelect) {
@@ -142,18 +153,130 @@ function showCameraError(error) {
     }
 }
 
+const skeletonEdges = [
+    [0, 1], [0, 2], [1, 3], [2, 4], [0, 5], [0, 6], [5, 6],
+    [5, 7], [7, 9], [6, 8], [8, 10], [5, 11], [6, 12],
+    [11, 12], [11, 13], [13, 15], [12, 14], [14, 16]
+];
+
+function confidenceColor(score) {
+    if (score >= 0.65) {
+        return "#38e078";
+    }
+    if (score >= 0.4) {
+        return "#ffd447";
+    }
+    return "#ff5b50";
+}
+
+function drawSkeleton(keypoints) {
+    const context = skeletonOverlay.getContext("2d");
+    const bounds = skeletonOverlay.getBoundingClientRect();
+    const pixelRatio = window.devicePixelRatio || 1;
+    const width = bounds.width;
+    const height = bounds.height;
+
+    skeletonOverlay.width = Math.round(width * pixelRatio);
+    skeletonOverlay.height = Math.round(height * pixelRatio);
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    if (!Array.isArray(keypoints) || keypoints.length !== 17 || !camera.videoWidth || !camera.videoHeight) {
+        return;
+    }
+
+    const coverScale = Math.max(width / camera.videoWidth, height / camera.videoHeight);
+    const renderedWidth = camera.videoWidth * coverScale;
+    const renderedHeight = camera.videoHeight * coverScale;
+    const offsetX = (width - renderedWidth) / 2;
+    const offsetY = (height - renderedHeight) / 2;
+    const point = (index) => ({
+        x: keypoints[index].x * renderedWidth + offsetX,
+        y: keypoints[index].y * renderedHeight + offsetY,
+        score: keypoints[index].score
+    });
+
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.shadowBlur = 7;
+    for (const [startIndex, endIndex] of skeletonEdges) {
+        const start = point(startIndex);
+        const end = point(endIndex);
+        if (start.score < 0.25 || end.score < 0.25) {
+            continue;
+        }
+
+        context.beginPath();
+        context.strokeStyle = confidenceColor((start.score + end.score) / 2);
+        context.lineWidth = 3.5;
+        context.shadowColor = context.strokeStyle;
+        context.moveTo(start.x, start.y);
+        context.lineTo(end.x, end.y);
+        context.stroke();
+    }
+
+    context.shadowBlur = 9;
+    keypoints.forEach((keypoint, index) => {
+        if (keypoint.score < 0.25) {
+            return;
+        }
+
+        const joint = point(index);
+        const radius = keypoint.score >= 0.4 ? 6 : 5;
+        context.beginPath();
+        context.fillStyle = confidenceColor(keypoint.score);
+        context.shadowColor = context.fillStyle;
+        context.arc(joint.x, joint.y, radius, 0, Math.PI * 2);
+        context.fill();
+        context.beginPath();
+        context.fillStyle = "#ffffff";
+        context.shadowBlur = 0;
+        context.arc(joint.x, joint.y, 2, 0, Math.PI * 2);
+        context.fill();
+        context.shadowBlur = 9;
+    });
+    context.shadowBlur = 0;
+}
+
+function canonicalPose(label) {
+    const normalized = String(label || "").toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+    if (normalized === "shoudler_stand" || normalized === "shoulder_stand") {
+        return "shoulder-stand";
+    }
+    if (normalized === "traingle" || normalized === "triangle") {
+        return "triangle";
+    }
+    return normalized;
+}
+
+function poseName(label) {
+    const selected = poses[canonicalPose(label)];
+    return selected ? selected.name : String(label || "No pose").replaceAll("_", " ");
+}
+
+function setNoDetectionState() {
+    drawSkeleton([]);
+    detectedPose.textContent = "No pose detected";
+    predictionConfidence.textContent = "--";
+    poseDetectionStatus.textContent = "Not detected";
+    cameraMessage.textContent = "Please move into the camera frame so your body can be detected clearly.";
+    coachMessage.textContent = cameraMessage.textContent;
+}
+
 async function analyzeCurrentFrame() {
     if (!cameraStream || !camera.videoWidth || !camera.videoHeight || analysisInFlight) {
         return;
     }
 
     analysisInFlight = true;
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    canvas.width = camera.videoWidth;
-    canvas.height = camera.videoHeight;
-    context.drawImage(camera, 0, 0, canvas.width, canvas.height);
-    const imageData = canvas.toDataURL("image/jpeg", 0.75);
+    const frameCanvas = document.createElement("canvas");
+    const frameContext = frameCanvas.getContext("2d");
+    const frameScale = Math.min(1, 640 / camera.videoWidth);
+    frameCanvas.width = Math.round(camera.videoWidth * frameScale);
+    frameCanvas.height = Math.round(camera.videoHeight * frameScale);
+    frameContext.drawImage(camera, 0, 0, frameCanvas.width, frameCanvas.height);
+    const imageData = frameCanvas.toDataURL("image/jpeg", 0.78);
+    analysisController = new AbortController();
 
     try {
         const response = await fetch(`${apiBaseUrl}/api/analyze`, {
@@ -165,51 +288,85 @@ async function analyzeCurrentFrame() {
                 image: imageData,
                 expected_pose: currentPose,
                 pose: currentPose
-            })
+            }),
+            signal: analysisController.signal
         });
 
         if (!response.ok) {
-            throw new Error(`Analysis request failed with status ${response.status}`);
+            const errorBody = await response.json().catch(() => ({}));
+            const detail = errorBody.detail || `The analysis service returned ${response.status}.`;
+            throw new Error(detail);
         }
 
         const result = await response.json();
-        if (!result.success || !result.display_name) {
+        if (!result.success) {
+            throw new Error("The analysis service returned an invalid response.");
+        }
+        if (!cameraStream) {
             return;
         }
 
-        const confidenceDisplay = Math.round((result.confidence || 0) * 100);
-        const poseDisplayName = result.display_name;
-        const topPrediction = result.top_predictions?.[0] || null;
+        drawSkeleton(result.keypoints);
+        const pointConfidence = result.keypoint_confidence === null ? Number.NaN : Number(result.keypoint_confidence);
+        keypointConfidence.textContent = Number.isFinite(pointConfidence)
+            ? `${(pointConfidence * 100).toFixed(1)}% · ${result.visible_keypoints}/17 visible`
+            : "--";
+        poseDetectionStatus.textContent = result.pose_detection_status || "Unknown";
 
-        cameraMessage.textContent = `${poseDisplayName} detected · ${confidenceDisplay}% confidence`;
-        coachMessage.textContent = result.feedback?.[0]
+        if (!result.person_detected) {
+            setNoDetectionState();
+            return;
+        }
+
+        const predictedName = poseName(result.pose);
+        const classifierConfidence = result.confidence === null ? Number.NaN : Number(result.confidence);
+        detectedPose.textContent = predictedName;
+        predictionConfidence.textContent = Number.isFinite(classifierConfidence)
+            ? `${(classifierConfidence * 100).toFixed(1)}%`
+            : "Unavailable";
+
+        const target = poses[currentPose]?.name || "your selected pose";
+        const matchesTarget = canonicalPose(result.pose) === canonicalPose(currentPose);
+        cameraMessage.classList.remove("is-error");
+        cameraMessage.textContent = matchesTarget
+            ? `${predictedName} detected · target pose matched`
+            : `${predictedName} detected · selected target: ${target}`;
+        coachMessage.textContent = Array.isArray(result.feedback) && result.feedback.length
             ? result.feedback[0]
-            : `Keep your focus on ${poseDisplayName} and move gently.`;
-
-        if (topPrediction && topPrediction.label !== currentPose) {
-            cameraMessage.textContent += ` · closest match: ${topPrediction.display_name}`;
-        }
-
-        if (result.is_correct_pose) {
-            coachMessage.textContent = result.feedback?.[0]
-                ? result.feedback[0]
-                : `Strong alignment in ${poseDisplayName}. Keep breathing and hold the shape.`;
-        }
+            : "Pose detected. Keep breathing and move within a comfortable range.";
     } catch (error) {
-        cameraMessage.textContent = "Live analysis is temporarily unavailable. Retrying in a moment.";
+        if (error.name !== "AbortError" && cameraStream) {
+            drawSkeleton([]);
+            cameraMessage.classList.add("is-error");
+            cameraMessage.textContent = `Live pose analysis unavailable: ${error.message}`;
+            poseDetectionStatus.textContent = "Backend unavailable";
+            predictionConfidence.textContent = "--";
+            coachMessage.textContent = "Check that the SoulSync inference service is running, then retry.";
+        }
     } finally {
         analysisInFlight = false;
+        analysisController = null;
     }
 }
 
-function startAnalysisLoop() {
-    if (analysisTimer) {
-        window.clearInterval(analysisTimer);
+function analysisLoop(timestamp) {
+    if (!cameraStream || document.hidden) {
+        return;
     }
 
-    analysisTimer = window.setInterval(() => {
+    if (timestamp - lastAnalysisTime >= 900 && !analysisInFlight) {
+        lastAnalysisTime = timestamp;
         analyzeCurrentFrame();
-    }, 1400);
+    }
+    analysisFrame = window.requestAnimationFrame(analysisLoop);
+}
+
+function startAnalysisLoop() {
+    if (analysisFrame !== null) {
+        window.cancelAnimationFrame(analysisFrame);
+    }
+    lastAnalysisTime = 0;
+    analysisFrame = window.requestAnimationFrame(analysisLoop);
 }
 
 async function startCamera() {
@@ -230,21 +387,27 @@ async function startCamera() {
     startBtn.textContent = "Connecting…";
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
+            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false
         });
         camera.srcObject = cameraStream;
         camera.style.display = "block";
         cameraPlaceholder.style.display = "none";
+        await camera.play();
         stopBtn.disabled = false;
         setCameraStatus(true);
         sessionStartedAt = Date.now();
         formatElapsedTime();
         sessionTimer = window.setInterval(formatElapsedTime, 1000);
         startAnalysisLoop();
-        cameraMessage.textContent = "Camera preview is on. Live pose analysis is now connected.";
+        poseDetectionStatus.textContent = "Looking for body";
+        cameraMessage.textContent = "Camera on. Move into view for pose detection.";
         coachMessage.textContent = `Your ${poses[currentPose].name} practice is ready. Settle into a comfortable position and move with care.`;
     } catch (error) {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach((track) => track.stop());
+            cameraStream = null;
+        }
         showCameraError(error);
     } finally {
         startBtn.disabled = false;
@@ -261,16 +424,25 @@ function stopCamera() {
         window.clearInterval(sessionTimer);
         sessionTimer = null;
     }
-    if (analysisTimer) {
-        window.clearInterval(analysisTimer);
-        analysisTimer = null;
+    if (analysisFrame !== null) {
+        window.cancelAnimationFrame(analysisFrame);
+        analysisFrame = null;
+    }
+    if (analysisController) {
+        analysisController.abort();
+        analysisController = null;
     }
     camera.srcObject = null;
     camera.style.display = "none";
     cameraPlaceholder.style.display = "flex";
+    drawSkeleton([]);
     stopBtn.disabled = true;
     holdTime.textContent = "0:00";
     setCameraStatus(false);
+    detectedPose.textContent = currentPose ? poses[currentPose].name : "Choose a pose";
+    predictionConfidence.textContent = "--";
+    keypointConfidence.textContent = "--";
+    poseDetectionStatus.textContent = "Camera off";
     cameraMessage.textContent = "Camera is off. Take a moment, then start again whenever you're ready.";
     cameraMessage.classList.remove("is-error");
     coachMessage.textContent = currentPose
@@ -282,3 +454,14 @@ if (startBtn && stopBtn && camera) {
     startBtn.addEventListener("click", startCamera);
     stopBtn.addEventListener("click", stopCamera);
 }
+
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden && analysisFrame !== null) {
+        window.cancelAnimationFrame(analysisFrame);
+        analysisFrame = null;
+    } else if (!document.hidden && cameraStream && analysisFrame === null) {
+        startAnalysisLoop();
+    }
+});
+
+window.addEventListener("pagehide", stopCamera);

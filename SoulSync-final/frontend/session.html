@@ -27,7 +27,7 @@
         <section class="coach-intro" aria-labelledby="coach-title">
             <p class="coach-eyebrow">YOUR PRACTICE, AT YOUR PACE</p>
             <h1 id="coach-title">A little guidance, right when you need it.</h1>
-            <p>Choose a pose, get comfortable in frame, and take your time. Your camera preview stays on this device.</p>
+            <p>Choose a pose, get comfortable in frame, and take your time. Sampled camera frames are sent to the SoulSync inference service for live feedback.</p>
         </section>
 
         <div class="coach-layout">
@@ -42,6 +42,7 @@
                     </div>
                     <div class="camera-view">
                         <video id="camera" autoplay playsinline muted aria-label="Live camera preview"></video>
+                        <canvas id="skeletonOverlay" class="skeleton-overlay" aria-hidden="true"></canvas>
                         <div id="cameraPlaceholder" class="camera-placeholder">
                             <svg viewBox="0 0 64 64" role="img" aria-label="Camera outline">
                                 <path d="M12 20h9l4-6h14l4 6h9a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H12a5 5 0 0 1-5-5V25a5 5 0 0 1 5-5Z"/>
@@ -64,8 +65,22 @@
             <aside class="practice-column" aria-label="Practice details">
                 <section class="practice-summary" aria-live="polite">
                     <p class="coach-eyebrow">TODAY'S FOCUS</p>
-                    <h2 id="targetPose">Choose a pose</h2>
+                    <h2 id="detectedPose">Choose a pose</h2>
                     <p class="pose-sanskrit" id="selectedPose">Select one below to get started.</p>
+                    <div class="live-metrics" aria-label="Live pose metrics">
+                        <div class="live-metric">
+                            <span>Prediction confidence</span>
+                            <strong id="predictionConfidence">--</strong>
+                        </div>
+                        <div class="live-metric">
+                            <span>Keypoint confidence</span>
+                            <strong id="keypointConfidence">--</strong>
+                        </div>
+                        <div class="live-metric live-metric-status">
+                            <span>Pose detection</span>
+                            <strong id="poseDetectionStatus">Waiting for camera</strong>
+                        </div>
+                    </div>
                     <p class="coach-message" id="coachMessage">Take a breath, choose a pose, and make the practice your own.</p>
                 </section>
 
@@ -117,7 +132,7 @@
 
         <aside class="coach-notice">
             <span class="notice-mark" aria-hidden="true">i</span>
-            <p>Use this page to frame your practice. When the local SoulSync backend is running, the browser sends sampled frames for live pose analysis while keeping the rest of your session on this device.</p>
+            <p>Video frames are sent to the configured SoulSync backend for analysis. Frames are processed for pose feedback and are not saved by this application.</p>
         </aside>
     </main>
 

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#EEF0E6">
     <meta name="description" content="Choose a yoga pose and get live camera-based feedback from SoulSync AI.">
-    <meta name="soulsync-api-base" content="">
     <title>Live coach · SoulSync AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,7 +27,7 @@
         <section class="coach-intro" aria-labelledby="coach-title">
             <p class="coach-eyebrow">YOUR PRACTICE, AT YOUR PACE</p>
             <h1 id="coach-title">A little guidance, right when you need it.</h1>
-            <p>Choose a pose, get comfortable in frame, and take your time. Sampled camera frames are sent to the SoulSync inference service for live feedback.</p>
+            <p>Choose a pose, get comfortable in frame, and take your time. MoveNet and the trained pose classifier run locally in your browser.</p>
         </section>
 
         <div class="coach-layout">
@@ -39,7 +38,7 @@
                             <span class="camera-panel-kicker">LIVE PREVIEW</span>
                             <span id="cameraStatus" class="camera-status"><span class="camera-status-dot" aria-hidden="true"></span> CAMERA OFF</span>
                         </div>
-                        <span class="camera-panel-private">Frames sent for analysis</span>
+                        <span class="camera-panel-private">On-device analysis</span>
                     </div>
                     <div class="camera-view">
                         <video id="camera" autoplay playsinline muted aria-label="Live camera preview"></video>
@@ -133,10 +132,10 @@
 
         <aside class="coach-notice">
             <span class="notice-mark" aria-hidden="true">i</span>
-            <p>Video frames are sent to the configured SoulSync backend for analysis. Frames are processed for pose feedback and are not saved by this application.</p>
+            <p>Camera frames stay in your browser. MoveNet keypoints, pose predictions, and posture feedback are computed on this device.</p>
         </aside>
     </main>
 
-    <script src="js/script.js"></script>
+    <script type="module" src="js/script.js"></script>
 </body>
 </html>

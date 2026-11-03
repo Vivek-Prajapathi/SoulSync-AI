@@ -1,3 +1,5 @@
+import { BrowserPoseAnalyzer } from "./browser-inference.js";
+
 const poses = {
     cobra: {
         name: "Cobra",
@@ -53,15 +55,8 @@ let sessionTimer = null;
 let analysisFrame = null;
 let analysisInFlight = false;
 let lastAnalysisTime = 0;
-let analysisController = null;
-const configuredApiBaseUrl = window.SOULSYNC_API_BASE_URL
-    || document.querySelector('meta[name="soulsync-api-base"]')?.content.trim();
-const isVercelStaticDeployment = window.location.hostname.endsWith(".vercel.app");
-const apiBaseUrl = configuredApiBaseUrl
-    ? configuredApiBaseUrl.replace(/\/+$/, "")
-    : isVercelStaticDeployment
-        ? ""
-        : (window.location.protocol === "file:" ? "http://localhost:8000" : window.location.origin);
+let browserAnalyzer = null;
+let analyzerPromise = null;
 
 function selectPose(poseId) {
     const pose = poses[poseId];
@@ -257,6 +252,9 @@ function canonicalPose(label) {
 }
 
 function poseName(label) {
+    if (canonicalPose(label) === "no_pose") {
+        return "No pose";
+    }
     const selected = poses[canonicalPose(label)];
     return selected ? selected.name : String(label || "No pose").replaceAll("_", " ");
 }
@@ -270,53 +268,33 @@ function setNoDetectionState() {
     coachMessage.textContent = cameraMessage.textContent;
 }
 
-async function analyzeCurrentFrame() {
-    if (!cameraStream || !camera.videoWidth || !camera.videoHeight || analysisInFlight) {
-        return;
+function loadBrowserAnalyzer() {
+    if (browserAnalyzer) {
+        return Promise.resolve(browserAnalyzer);
     }
+    if (!analyzerPromise) {
+        analyzerPromise = BrowserPoseAnalyzer.create()
+            .then((analyzer) => {
+                browserAnalyzer = analyzer;
+                return analyzer;
+            })
+            .catch((error) => {
+                analyzerPromise = null;
+                throw error;
+            });
+    }
+    return analyzerPromise;
+}
 
-    if (!apiBaseUrl) {
-        cameraMessage.classList.add("is-error");
-        cameraMessage.textContent = "Pose analysis is not configured for this deployment. Set the hosted FastAPI URL in the session page API setting.";
-        poseDetectionStatus.textContent = "Backend URL required";
-        coachMessage.textContent = "The webcam preview works, but MoveNet and XGBoost need the hosted inference backend.";
+async function analyzeCurrentFrame() {
+    if (!cameraStream || !camera.videoWidth || !camera.videoHeight || analysisInFlight || !browserAnalyzer) {
         return;
     }
 
     analysisInFlight = true;
-    const frameCanvas = document.createElement("canvas");
-    const frameContext = frameCanvas.getContext("2d");
-    const frameScale = Math.min(1, 640 / camera.videoWidth);
-    frameCanvas.width = Math.round(camera.videoWidth * frameScale);
-    frameCanvas.height = Math.round(camera.videoHeight * frameScale);
-    frameContext.drawImage(camera, 0, 0, frameCanvas.width, frameCanvas.height);
-    const imageData = frameCanvas.toDataURL("image/jpeg", 0.78);
-    analysisController = new AbortController();
 
     try {
-        const response = await fetch(`${apiBaseUrl}/api/analyze`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                image: imageData,
-                expected_pose: currentPose,
-                pose: currentPose
-            }),
-            signal: analysisController.signal
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.json().catch(() => ({}));
-            const detail = errorBody.detail || `The analysis service returned ${response.status}.`;
-            throw new Error(detail);
-        }
-
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error("The analysis service returned an invalid response.");
-        }
+        const result = await browserAnalyzer.analyze(camera, currentPose);
         if (!cameraStream) {
             return;
         }
@@ -341,35 +319,36 @@ async function analyzeCurrentFrame() {
             ? `${(classifierConfidence * 100).toFixed(1)}%`
             : "Unavailable";
 
-        const target = poses[currentPose]?.name || "your selected pose";
-        const matchesTarget = canonicalPose(result.pose) === canonicalPose(currentPose);
-        cameraMessage.textContent = matchesTarget
-            ? `${predictedName} detected · target pose matched`
-            : `${predictedName} detected · selected target: ${target}`;
+        const target = poses[currentPose]?.name;
+        const matchesTarget = currentPose && canonicalPose(result.pose) === canonicalPose(currentPose);
+        cameraMessage.textContent = !target
+            ? `${predictedName} detected by on-device MoveNet and XGBoost.`
+            : matchesTarget
+                ? `${predictedName} detected · target pose matched`
+                : `${predictedName} detected · selected target: ${target}`;
         coachMessage.textContent = Array.isArray(result.feedback) && result.feedback.length
             ? result.feedback[0]
             : "Pose detected. Keep breathing and move within a comfortable range.";
     } catch (error) {
-        if (error.name !== "AbortError" && cameraStream) {
+        if (cameraStream) {
             drawSkeleton([]);
             cameraMessage.classList.add("is-error");
-            cameraMessage.textContent = `Live pose analysis unavailable: ${error.message}`;
-            poseDetectionStatus.textContent = "Backend unavailable";
+            cameraMessage.textContent = `On-device pose analysis unavailable: ${error.message}`;
+            poseDetectionStatus.textContent = "AI unavailable";
             predictionConfidence.textContent = "--";
-            coachMessage.textContent = "Check that the SoulSync inference service is running, then retry.";
+            coachMessage.textContent = "Check your connection while the browser downloads the models, then try again.";
         }
     } finally {
         analysisInFlight = false;
-        analysisController = null;
     }
 }
 
 function analysisLoop(timestamp) {
-    if (!cameraStream || document.hidden) {
+    if (!cameraStream || document.hidden || !browserAnalyzer) {
         return;
     }
 
-    if (timestamp - lastAnalysisTime >= 900 && !analysisInFlight) {
+    if (timestamp - lastAnalysisTime >= 250 && !analysisInFlight) {
         lastAnalysisTime = timestamp;
         analyzeCurrentFrame();
     }
@@ -387,11 +366,6 @@ function startAnalysisLoop() {
 async function startCamera() {
     cameraMessage.textContent = "";
     cameraMessage.classList.remove("is-error");
-
-    if (!currentPose) {
-        cameraMessage.textContent = "Choose a pose first, then turn on your camera.";
-        return;
-    }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         showCameraError({ name: "UnsupportedError" });
@@ -414,10 +388,29 @@ async function startCamera() {
         sessionStartedAt = Date.now();
         formatElapsedTime();
         sessionTimer = window.setInterval(formatElapsedTime, 1000);
-        startAnalysisLoop();
-        poseDetectionStatus.textContent = "Looking for body";
-        cameraMessage.textContent = "Camera on. Move into view for pose detection.";
-        coachMessage.textContent = `Your ${poses[currentPose].name} practice is ready. Settle into a comfortable position and move with care.`;
+        detectedPose.textContent = "Loading on-device AI…";
+        poseDetectionStatus.textContent = "Loading models";
+        cameraMessage.textContent = "Live camera is on. Loading MoveNet and the trained pose classifier in your browser.";
+        coachMessage.textContent = "Your camera frames stay on this device while the models load.";
+        loadBrowserAnalyzer()
+            .then(() => {
+                if (!cameraStream) {
+                    return;
+                }
+                poseDetectionStatus.textContent = "Looking for body";
+                cameraMessage.classList.remove("is-error");
+                cameraMessage.textContent = "On-device AI is ready. Move into view for pose detection.";
+                startAnalysisLoop();
+            })
+            .catch((error) => {
+                if (!cameraStream) {
+                    return;
+                }
+                cameraMessage.classList.add("is-error");
+                cameraMessage.textContent = `Could not load on-device AI models: ${error.message}`;
+                poseDetectionStatus.textContent = "AI unavailable";
+                coachMessage.textContent = "The camera preview remains on. Check your connection, then turn the camera off and try again.";
+            });
     } catch (error) {
         if (cameraStream) {
             cameraStream.getTracks().forEach((track) => track.stop());
@@ -445,10 +438,6 @@ function stopCamera() {
     if (analysisFrame !== null) {
         window.cancelAnimationFrame(analysisFrame);
         analysisFrame = null;
-    }
-    if (analysisController) {
-        analysisController.abort();
-        analysisController = null;
     }
     camera.srcObject = null;
     camera.style.display = "none";

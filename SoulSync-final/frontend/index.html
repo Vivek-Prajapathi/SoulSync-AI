@@ -171,15 +171,15 @@
                 <div class="privacy-copy">
                     <p class="eyebrow">Camera &amp; privacy</p>
                     <h2>Your camera,<br>your practice</h2>
-                    <p>For live coaching, your browser sends reduced camera frames to the configured SoulSync backend about once per second. The backend processes frames in memory and returns pose keypoints, prediction scores, and feedback; the application does not save the image frames. Hosting providers may have separate infrastructure logging policies.</p>
+                    <p>Live coaching runs in your browser: MoveNet finds body keypoints and the trained XGBoost model classifies the pose on your device. Camera frames are not sent to a SoulSync analysis server.</p>
                 </div>
-                <div class="privacy-flow" aria-label="The browser sends sampled camera frames to the SoulSync backend, which returns pose analysis and feedback.">
+                <div class="privacy-flow" aria-label="Your camera video is analyzed on your device and posture feedback appears on screen.">
                     <div class="flow-row">
                         <div class="flow-box">Your camera</div><span class="flow-arrow" aria-hidden="true">→</span>
-                        <div class="flow-box flow-highlight">SoulSync<br>pose backend</div><span class="flow-arrow" aria-hidden="true">→</span>
+                        <div class="flow-box flow-highlight">On-device<br>AI models</div><span class="flow-arrow" aria-hidden="true">→</span>
                         <div class="flow-box">Cue on<br>screen</div>
                     </div>
-                    <div class="server-note">Frame images are processed in memory, not stored by the application</div>
+                    <div class="server-note">Video frames stay on your device</div>
                 </div>
             </div>
         </section>

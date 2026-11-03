@@ -1,7 +1,7 @@
 import "@tensorflow/tfjs-backend-cpu";
 import * as tf from "@tensorflow/tfjs-core";
 import * as tflite from "@tensorflow/tfjs-tflite/dist/tf-tflite.fesm.js";
-import * as ort from "onnxruntime-web";
+import * as ort from "onnxruntime-web/wasm";
 
 const INPUT_SIZE = 256;
 const KEYPOINT_THRESHOLD = 0.3;

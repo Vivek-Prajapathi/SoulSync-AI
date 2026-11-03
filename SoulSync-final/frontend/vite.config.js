@@ -22,9 +22,51 @@ function copyDirectoryContents(sourceDirectory, destinationDirectory) {
     }
 }
 
+function getRuntimeAssetSources() {
+    const sources = new Map();
+    const tfliteWasmDirectory = resolve(
+        frontendDirectory,
+        "node_modules/@tensorflow/tfjs-tflite/wasm"
+    );
+    for (const fileName of readdirSync(tfliteWasmDirectory)) {
+        sources.set(fileName, resolve(tfliteWasmDirectory, fileName));
+    }
+
+    const onnxRuntimeDirectory = resolve(
+        frontendDirectory,
+        "node_modules/onnxruntime-web/dist"
+    );
+    for (const extension of [".mjs", ".wasm"]) {
+        const fileName = `ort-wasm-simd-threaded${extension}`;
+        sources.set(fileName, resolve(onnxRuntimeDirectory, fileName));
+    }
+    return sources;
+}
+
 function browserRuntimeAssets() {
     return {
         name: "soulsync-browser-runtime-assets",
+        configureServer(server) {
+            const runtimeAssets = getRuntimeAssetSources();
+            server.middlewares.use((request, response, next) => {
+                if (!request.url) {
+                    next();
+                    return;
+                }
+                const pathname = new URL(request.url, "http://localhost").pathname;
+                const assetName = pathname.replace(/^\/(?:wasm\/)?/, "");
+                const assetPath = runtimeAssets.get(assetName);
+                if (!assetPath) {
+                    next();
+                    return;
+                }
+                response.setHeader(
+                    "Content-Type",
+                    assetName.endsWith(".wasm") ? "application/wasm" : "text/javascript"
+                );
+                response.end(readFileSync(assetPath));
+            });
+        },
         generateBundle() {
             for (const [fileName, sourcePath] of Object.entries(modelAssets)) {
                 this.emitFile({
@@ -64,6 +106,9 @@ export default defineConfig({
     root: frontendDirectory,
     base: "/",
     plugins: [browserRuntimeAssets()],
+    resolve: {
+        conditions: ["onnxruntime-web-use-extern-wasm"]
+    },
     build: {
         outDir: resolve(frontendDirectory, "dist"),
         emptyOutDir: true,

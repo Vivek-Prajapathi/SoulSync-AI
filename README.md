@@ -4,7 +4,7 @@ SoulSync AI is a yoga posture detection and coaching system that runs MoveNet ke
 
 ## Live Demo
 
-- Local development: http://127.0.0.1:8000
+- Local development: https://soulsync-ai-ten.vercel.app
 - Production deployment: replace with your deployed URL
 
 ## Features
